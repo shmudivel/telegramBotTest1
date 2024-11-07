@@ -24,8 +24,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text('Hello! I am your AI-powered bot. How can I assist you today?')
 
 def main():
-    # Set your Telegram bot token
-    # telegram_token = '7987453052:AAEDLf8O4bbnsVA9fVlZSNwvH-m9s_-vkEo'
+    # Get the port from the environment or default to 10000
+    port = int(os.environ.get("PORT", "10000"))
     
     # Create the Application
     application = Application.builder().token(telegram_token).build()
@@ -34,8 +34,8 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Start the Bot
-    application.run_polling()
+    # Start the Bot on specified port
+    application.run_polling(listen="0.0.0.0", port=port)
 
 if __name__ == '__main__':
     main()
