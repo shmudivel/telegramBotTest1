@@ -12,27 +12,27 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
+logger = logging.getLogger(__name__)  # Use a module-specific logger
+
 # Load environment variables directly
 openai.api_key = os.getenv("OPENAI_API_KEY")
 telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
 
 if telegram_token is None:
-    logging.error("Error: TELEGRAM_BOT_TOKEN environment variable is not set")
+    logger.error("Error: TELEGRAM_BOT_TOKEN environment variable is not set")
     exit(1)
 if openai.api_key is None:
-    logging.error("Error: OPENAI_API_KEY environment variable is not set")
+    logger.error("Error: OPENAI_API_KEY environment variable is not set")
     exit(1)
 
 # Define a function to handle text messages
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         user_message = update.message.text
-        logging.debug(f"Received text message: {user_message}")
+        logger.debug(f"Received text message: {user_message}")
 
         # Retrieve the conversation history for this user
-        if 'conversation' not in context.user_data:
-            context.user_data['conversation'] = []
-        conversation = context.user_data['conversation']
+        conversation = context.user_data.get('conversation', [])
 
         # Append the user's new message to the conversation history
         conversation.append({"role": "user", "content": user_message})
@@ -66,26 +66,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         await update.message.reply_text(bot_reply)
     except Exception as e:
-        logging.exception("Error in handle_message")
+        logger.exception("Error in handle_message")
         await update.message.reply_text("Sorry, I'm having trouble processing your request.")
 
 # Define a function to handle voice messages
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
-        logging.debug("Received a voice message")
+        logger.debug("Received a voice or audio message")
+        logger.debug(f"Update: {update}")
 
-        # Get the voice message
-        voice = update.message.voice
-        file_id = voice.file_id
-        logging.debug(f"Voice message file_id: {file_id}")
+        # Determine whether it's a voice or audio message
+        if update.message.voice:
+            logger.debug("Processing voice message")
+            file_id = update.message.voice.file_id
+            file_unique_id = update.message.voice.file_unique_id
+            file_duration = update.message.voice.duration
+            logger.debug(f"Voice file_id: {file_id}, duration: {file_duration}")
+        elif update.message.audio:
+            logger.debug("Processing audio message")
+            file_id = update.message.audio.file_id
+            file_unique_id = update.message.audio.file_unique_id
+            file_duration = update.message.audio.duration
+            logger.debug(f"Audio file_id: {file_id}, duration: {file_duration}")
+        else:
+            logger.error("No voice or audio found in the message")
+            await update.message.reply_text("Sorry, I couldn't find any voice or audio in your message.")
+            return
 
         # Get the file object
         file = await context.bot.get_file(file_id)
 
         # Download the file into a BytesIO object
         audio_buffer = io.BytesIO()
-        await file.download_to_memory(out=audio_buffer)
-        logging.debug("Voice message downloaded into buffer")
+        await file.download(out=audio_buffer)
+        logger.debug("Audio file downloaded into buffer")
 
         # Reset the buffer's file pointer to the beginning
         audio_buffer.seek(0)
@@ -97,15 +111,13 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             filename="audio.ogg",  # Provide a filename with the correct extension
             response_format="text"
         )
-        logging.debug(f"Transcription result: {transcript}")
+        logger.debug(f"Transcription result: {transcript}")
 
         # Use the transcript as the user's message
         user_message = transcript
 
         # Retrieve the conversation history for this user
-        if 'conversation' not in context.user_data:
-            context.user_data['conversation'] = []
-        conversation = context.user_data['conversation']
+        conversation = context.user_data.get('conversation', [])
 
         # Append the user's new message to the conversation history
         conversation.append({"role": "user", "content": user_message})
@@ -139,7 +151,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         await update.message.reply_text(bot_reply)
     except Exception as e:
-        logging.exception("Error in handle_voice_message")
+        logger.exception("Error in handle_voice_message")
         await update.message.reply_text("Sorry, an error occurred while processing your voice message.")
 
 # Define a function to start the bot
@@ -152,7 +164,7 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Conversation history has been reset. How can I assist you now?")
 
 def main():
-    logging.info("Starting application")
+    logger.info("Starting application")
 
     # Create the Application
     application = Application.builder().token(telegram_token).build()
@@ -160,18 +172,18 @@ def main():
     # Register handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("reset", reset))
-    application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))  # Moved before text handler
+    application.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice_message))  # Handles both voice and audio messages
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Start webhook instead of polling
     port = int(os.environ.get("PORT", "8443"))  # Default port 8443 if PORT is not set
-    logging.info(f"PORT: {port}")
+    logger.info(f"PORT: {port}")
     render_external_url = os.getenv('RENDER_EXTERNAL_URL')
     if render_external_url is None:
-        logging.error("Error: RENDER_EXTERNAL_URL environment variable is not set")
+        logger.error("Error: RENDER_EXTERNAL_URL environment variable is not set")
         exit(1)
     webhook_url = f"{render_external_url}/{telegram_token}"
-    logging.info(f"Webhook URL: {webhook_url}")
+    logger.info(f"Webhook URL: {webhook_url}")
     try:
         application.run_webhook(
             listen="0.0.0.0",
@@ -180,7 +192,7 @@ def main():
             webhook_url=webhook_url
         )
     except Exception as e:
-        logging.exception("Error starting the webhook")
+        logger.exception("Error starting the webhook")
         exit(1)
 
 if __name__ == '__main__':
